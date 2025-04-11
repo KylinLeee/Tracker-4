@@ -1,0 +1,157 @@
+// Dark mode state
+let isDarkMode = localStorage.getItem('darkMode') === 'true';
+
+// Dark mode class definitions
+const darkModeClasses = {
+    body: 'bg-gray-900',
+    nav: 'bg-gray-800 border-gray-700',
+    text: 'text-gray-100',
+    textMuted: 'text-gray-400',
+    card: 'bg-gray-800 border-gray-700',
+    input: 'bg-gray-700 border-gray-600 text-gray-100',
+    button: 'bg-blue-600 hover:bg-blue-700',
+    modal: 'bg-gray-800',
+};
+
+// Initialize dark mode
+function initDarkMode() {
+    const darkModeToggle = document.getElementById('dark-mode-toggle');
+    if (darkModeToggle) {
+        darkModeToggle.addEventListener('click', toggleDarkMode);
+    }
+    
+    if (isDarkMode) {
+        enableDarkMode();
+    }
+}
+
+// Toggle dark mode
+function toggleDarkMode() {
+    isDarkMode = !isDarkMode;
+    localStorage.setItem('darkMode', isDarkMode);
+    
+    if (isDarkMode) {
+        enableDarkMode();
+    } else {
+        disableDarkMode();
+    }
+    
+    updateDarkModeIcon();
+}
+
+// Enable dark mode
+function enableDarkMode() {
+    document.body.classList.add(darkModeClasses.body);
+    
+    // Update navigation
+    const nav = document.querySelector('nav');
+    nav?.classList.remove('bg-white');
+    nav?.classList.add(darkModeClasses.nav);
+    
+    // Update text colors
+    document.querySelectorAll('.text-gray-900').forEach(el => {
+        el.classList.remove('text-gray-900');
+        el.classList.add(darkModeClasses.text);
+    });
+    
+    document.querySelectorAll('.text-gray-600').forEach(el => {
+        el.classList.remove('text-gray-600');
+        el.classList.add(darkModeClasses.textMuted);
+    });
+    
+    // Update cards
+    document.querySelectorAll('.bg-white').forEach(el => {
+        el.classList.remove('bg-white');
+        el.classList.add(darkModeClasses.card);
+    });
+    
+    // Update inputs
+    document.querySelectorAll('input').forEach(el => {
+        el.classList.add(darkModeClasses.input);
+    });
+    
+    // Update modals
+    document.querySelectorAll('.modal-content').forEach(el => {
+        el.classList.add(darkModeClasses.modal);
+    });
+}
+
+// Disable dark mode
+function disableDarkMode() {
+    document.body.classList.remove(darkModeClasses.body);
+    
+    // Update navigation
+    const nav = document.querySelector('nav');
+    nav?.classList.add('bg-white');
+    nav?.classList.remove(darkModeClasses.nav);
+    
+    // Update text colors
+    document.querySelectorAll(`.${darkModeClasses.text}`).forEach(el => {
+        el.classList.add('text-gray-900');
+        el.classList.remove(darkModeClasses.text);
+    });
+    
+    document.querySelectorAll(`.${darkModeClasses.textMuted}`).forEach(el => {
+        el.classList.add('text-gray-600');
+        el.classList.remove(darkModeClasses.textMuted);
+    });
+    
+    // Update cards
+    document.querySelectorAll(`.${darkModeClasses.card}`).forEach(el => {
+        el.classList.add('bg-white');
+        el.classList.remove(darkModeClasses.card);
+    });
+    
+    // Update inputs
+    document.querySelectorAll('input').forEach(el => {
+        el.classList.remove(darkModeClasses.input);
+    });
+    
+    // Update modals
+    document.querySelectorAll('.modal-content').forEach(el => {
+        el.classList.remove(darkModeClasses.modal);
+    });
+}
+
+// Update dark mode icon
+function updateDarkModeIcon() {
+    const icon = document.querySelector('#dark-mode-toggle i');
+    if (icon) {
+        icon.className = isDarkMode ? 'fas fa-sun' : 'fas fa-moon';
+    }
+}
+
+// Apply dark mode to new elements
+function applyDarkModeToNewElement(element) {
+    if (!isDarkMode) return;
+    
+    if (element.classList.contains('bg-white')) {
+        element.classList.remove('bg-white');
+        element.classList.add(darkModeClasses.card);
+    }
+    
+    if (element.classList.contains('text-gray-900')) {
+        element.classList.remove('text-gray-900');
+        element.classList.add(darkModeClasses.text);
+    }
+    
+    if (element.classList.contains('text-gray-600')) {
+        element.classList.remove('text-gray-600');
+        element.classList.add(darkModeClasses.textMuted);
+    }
+    
+    // Apply to children
+    element.querySelectorAll('*').forEach(child => {
+        applyDarkModeToNewElement(child);
+    });
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', initDarkMode);
+
+// Export functions
+export {
+    isDarkMode,
+    toggleDarkMode,
+    applyDarkModeToNewElement,
+}; 

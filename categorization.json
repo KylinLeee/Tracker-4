@@ -1,0 +1,273 @@
+// Enhanced Categorization and Sorting Management
+import { showNotification } from '../app.js';
+
+// Enhanced category definitions
+const CATEGORIES = {
+    'Language & Text': {
+        icon: 'text',
+        subcategories: [
+            'Text Generation',
+            'Translation',
+            'Content Writing',
+            'Chat & Conversation',
+            'Language Learning'
+        ]
+    },
+    'Image & Design': {
+        icon: 'image',
+        subcategories: [
+            'Image Generation',
+            'Image Editing',
+            'Design Tools',
+            'Art Creation',
+            'Logo Design'
+        ]
+    },
+    'Audio & Voice': {
+        icon: 'microphone',
+        subcategories: [
+            'Voice Generation',
+            'Speech Recognition',
+            'Music Generation',
+            'Audio Editing',
+            'Voice Cloning'
+        ]
+    },
+    'Video & Animation': {
+        icon: 'video',
+        subcategories: [
+            'Video Generation',
+            'Video Editing',
+            'Animation',
+            'Motion Graphics',
+            'Virtual Production'
+        ]
+    },
+    'Development': {
+        icon: 'code',
+        subcategories: [
+            'Code Generation',
+            'Code Analysis',
+            'Development Tools',
+            'Testing & QA',
+            'DevOps'
+        ]
+    },
+    'Business & Productivity': {
+        icon: 'briefcase',
+        subcategories: [
+            'Data Analysis',
+            'Automation',
+            'Project Management',
+            'Customer Service',
+            'Marketing'
+        ]
+    },
+    'Research & Education': {
+        icon: 'graduation-cap',
+        subcategories: [
+            'Research Tools',
+            'Learning Platforms',
+            'Academic Writing',
+            'Knowledge Management',
+            'Educational Content'
+        ]
+    }
+};
+
+// Sort options
+const SORT_OPTIONS = {
+    trending: (a, b) => b.trending_score - a.trending_score,
+    newest: (a, b) => b.timestamp - a.timestamp,
+    priceAsc: (a, b) => (a.pricing?.[0]?.price || 0) - (b.pricing?.[0]?.price || 0),
+    priceDesc: (a, b) => (b.pricing?.[0]?.price || 0) - (a.pricing?.[0]?.price || 0),
+    rating: (a, b) => (b.rating?.average || 0) - (a.rating?.average || 0),
+    alphabetical: (a, b) => a.name.localeCompare(b.name)
+};
+
+// Filter apps by category and subcategory
+function filterAppsByCategory(apps, category, subcategory = null) {
+    return apps.filter(app => {
+        if (subcategory) {
+            return app.category.name === subcategory;
+        }
+        return CATEGORIES[category].subcategories.includes(app.category.name);
+    });
+}
+
+// Sort apps by given criteria
+function sortApps(apps, sortBy = 'trending') {
+    return [...apps].sort(SORT_OPTIONS[sortBy]);
+}
+
+// Group apps by main category
+function groupAppsByMainCategory(apps) {
+    const grouped = {};
+    Object.keys(CATEGORIES).forEach(mainCategory => {
+        grouped[mainCategory] = {
+            apps: filterAppsByCategory(apps, mainCategory),
+            subcategories: CATEGORIES[mainCategory].subcategories.map(sub => ({
+                name: sub,
+                apps: apps.filter(app => app.category.name === sub)
+            }))
+        };
+    });
+    return grouped;
+}
+
+// Create enhanced category section HTML
+function createEnhancedCategorySection(category, categoryData) {
+    return `
+        <div class="category-section mb-8">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-2xl font-bold text-gray-900">
+                    <i class="fas fa-${CATEGORIES[category].icon} mr-2 text-blue-500"></i>
+                    ${category}
+                </h2>
+                <button onclick="toggleCategoryExpand('${category}')" class="text-blue-500 hover:text-blue-600">
+                    <i class="fas fa-chevron-down" id="${category}-chevron"></i>
+                </button>
+            </div>
+            
+            <div id="${category}-content" class="category-content">
+                <!-- Subcategories tabs -->
+                <div class="flex overflow-x-auto mb-4 subcategory-tabs">
+                    <button class="subcategory-tab active" 
+                            onclick="filterSubcategory('${category}', null)">
+                        All
+                    </button>
+                    ${CATEGORIES[category].subcategories.map(sub => `
+                        <button class="subcategory-tab"
+                                onclick="filterSubcategory('${category}', '${sub}')">
+                            ${sub}
+                        </button>
+                    `).join('')}
+                </div>
+
+                <!-- Apps grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" 
+                     id="${category}-apps">
+                    ${categoryData.apps.map(app => createAppCard(app)).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Create sorting controls HTML
+function createSortingControls() {
+    return `
+        <div class="sorting-controls bg-white shadow-sm rounded-lg p-4 mb-6">
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div class="flex items-center space-x-4">
+                    <label class="text-sm font-medium text-gray-700">Sort by:</label>
+                    <select id="sort-select" 
+                            class="form-select rounded-md border-gray-300"
+                            onchange="handleSortChange(this.value)">
+                        <option value="trending">Trending</option>
+                        <option value="newest">Newest</option>
+                        <option value="priceAsc">Price: Low to High</option>
+                        <option value="priceDesc">Price: High to Low</option>
+                        <option value="rating">Highest Rated</option>
+                        <option value="alphabetical">A-Z</option>
+                    </select>
+                </div>
+                
+                <div class="flex items-center space-x-4">
+                    <label class="text-sm font-medium text-gray-700">View:</label>
+                    <div class="view-toggles">
+                        <button onclick="toggleView('grid')" 
+                                class="view-toggle active"
+                                id="grid-view-btn">
+                            <i class="fas fa-th-large"></i>
+                        </button>
+                        <button onclick="toggleView('list')"
+                                class="view-toggle"
+                                id="list-view-btn">
+                            <i class="fas fa-list"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Add styles
+const style = document.createElement('style');
+style.textContent = `
+    .subcategory-tabs {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        padding-bottom: 4px;
+    }
+    
+    .subcategory-tabs::-webkit-scrollbar {
+        display: none;
+    }
+    
+    .subcategory-tab {
+        padding: 0.5rem 1rem;
+        margin-right: 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.875rem;
+        white-space: nowrap;
+        transition: all 0.2s;
+        background-color: #f3f4f6;
+    }
+    
+    .subcategory-tab:hover {
+        background-color: #e5e7eb;
+    }
+    
+    .subcategory-tab.active {
+        background-color: #3b82f6;
+        color: white;
+    }
+    
+    .view-toggles {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .view-toggle {
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+        color: #6b7280;
+        transition: all 0.2s;
+    }
+    
+    .view-toggle:hover {
+        color: #374151;
+        background-color: #f3f4f6;
+    }
+    
+    .view-toggle.active {
+        color: #3b82f6;
+        background-color: #eff6ff;
+    }
+    
+    .category-section {
+        transition: all 0.3s ease;
+    }
+    
+    .category-content {
+        transition: all 0.3s ease;
+    }
+    
+    .category-content.collapsed {
+        display: none;
+    }
+`;
+document.head.appendChild(style);
+
+// Export functions
+export {
+    CATEGORIES,
+    SORT_OPTIONS,
+    filterAppsByCategory,
+    sortApps,
+    groupAppsByMainCategory,
+    createEnhancedCategorySection,
+    createSortingControls
+}; 

@@ -1,0 +1,234 @@
+// Real-time Updates Management
+import { showNotification } from '../app.js';
+
+// Constants
+const REFRESH_INTERVAL = 5 * 60 * 60 * 1000; // 5 hours in milliseconds
+const SOURCES = [
+    'https://api.aiappstracker.com/apps/updates',
+    'https://huggingface.co/api/spaces',
+    'https://api.github.com/search/repositories?q=topic:ai-application',
+    'https://api.producthunt.com/v2/api/graphql' // For AI-related products
+];
+
+// State
+let lastUpdateTimestamp = localStorage.getItem('lastUpdateTimestamp') || 0;
+let updateInterval;
+
+// Initialize WebSocket connection for real-time updates
+function initializeWebSocket() {
+    const ws = new WebSocket('wss://api.aiappstracker.com/updates');
+
+    ws.onmessage = (event) => {
+        const update = JSON.parse(event.data);
+        handleUpdate(update);
+    };
+
+    ws.onclose = () => {
+        console.log('WebSocket connection closed. Retrying in 5 seconds...');
+        setTimeout(initializeWebSocket, 5000);
+    };
+
+    ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+    };
+}
+
+// Fetch updates from multiple sources
+async function fetchUpdates() {
+    try {
+        const currentTime = Date.now();
+        if (currentTime - lastUpdateTimestamp < REFRESH_INTERVAL) {
+            return;
+        }
+
+        showNotification('Checking for new AI tools and updates...', 'info');
+
+        const updates = await Promise.all(SOURCES.map(async (source) => {
+            try {
+                const response = await fetch(source);
+                const data = await response.json();
+                return processSourceData(source, data);
+            } catch (error) {
+                console.error(`Error fetching from ${source}:`, error);
+                return [];
+            }
+        }));
+
+        const newApps = updates.flat().filter(app => app.timestamp > lastUpdateTimestamp);
+
+        if (newApps.length > 0) {
+            updateAppsList(newApps);
+            showNotification(`Found ${newApps.length} new AI tools and updates!`, 'success');
+        }
+
+        lastUpdateTimestamp = currentTime;
+        localStorage.setItem('lastUpdateTimestamp', currentTime);
+    } catch (error) {
+        console.error('Error in fetchUpdates:', error);
+        showNotification('Failed to fetch updates', 'error');
+    }
+}
+
+// Process data from different sources
+function processSourceData(source, data) {
+    switch (source) {
+        case SOURCES[0]: // AI Apps Tracker API
+            return data.map(app => ({
+                ...app,
+                source: 'AI Apps Tracker'
+            }));
+
+        case SOURCES[1]: // HuggingFace
+            return data.items
+                .filter(item => item.tags.includes('ai-application'))
+                .map(item => ({
+                    id: item.id,
+                    name: item.title,
+                    description: item.description,
+                    url: `https://huggingface.co/spaces/${item.id}`,
+                    company: item.author,
+                    category: { name: 'AI Application' },
+                    timestamp: new Date(item.lastModified).getTime(),
+                    source: 'HuggingFace'
+                }));
+
+        case SOURCES[2]: // GitHub
+            return data.items.map(item => ({
+                id: item.id,
+                name: item.name,
+                description: item.description,
+                url: item.html_url,
+                company: item.owner.login,
+                category: { name: 'Open Source AI' },
+                timestamp: new Date(item.updated_at).getTime(),
+                source: 'GitHub'
+            }));
+
+        case SOURCES[3]: // Product Hunt
+            return data.data.posts.edges
+                .filter(edge => edge.node.topics.some(topic => topic.name.toLowerCase().includes('ai')))
+                .map(edge => ({
+                    id: edge.node.id,
+                    name: edge.node.name,
+                    description: edge.node.tagline,
+                    url: edge.node.url,
+                    company: edge.node.makers[0]?.name || 'Unknown',
+                    category: { name: 'AI Product' },
+                    timestamp: new Date(edge.node.createdAt).getTime(),
+                    source: 'Product Hunt'
+                }));
+
+        default:
+            return [];
+    }
+}
+
+// Update apps list with new data
+function updateAppsList(newApps) {
+    // Sort new apps by timestamp
+    newApps.sort((a, b) => b.timestamp - a.timestamp);
+
+    // Update trending section
+    const trendingAppsContainer = document.getElementById('trending-apps');
+    if (trendingAppsContainer) {
+        const existingApps = Array.from(trendingAppsContainer.children);
+        
+        // Add new apps with animation
+        newApps.forEach(app => {
+            const appElement = document.createElement('div');
+            appElement.className = 'app-card new-app';
+            appElement.innerHTML = createAppCard(app);
+            trendingAppsContainer.insertBefore(appElement, existingApps[0]);
+        });
+
+        // Remove excess apps to maintain the original count
+        const maxApps = userPreferences.display.itemsPerPage;
+        while (trendingAppsContainer.children.length > maxApps) {
+            trendingAppsContainer.lastChild.remove();
+        }
+    }
+
+    // Update categories count
+    updateCategoriesCounts(newApps);
+}
+
+// Update category counts
+function updateCategoriesCounts(newApps) {
+    const categoryCounts = new Map();
+    newApps.forEach(app => {
+        const count = categoryCounts.get(app.category.name) || 0;
+        categoryCounts.set(app.category.name, count + 1);
+    });
+
+    const categoryElements = document.querySelectorAll('.category-card');
+    categoryElements.forEach(element => {
+        const categoryName = element.querySelector('h3').textContent;
+        const countElement = element.querySelector('p');
+        const newCount = categoryCounts.get(categoryName) || 0;
+        if (newCount > 0) {
+            const currentCount = parseInt(countElement.textContent);
+            countElement.textContent = `${currentCount + newCount} apps`;
+            element.classList.add('category-updated');
+        }
+    });
+}
+
+// Start real-time updates
+function startRealTimeUpdates() {
+    // Initial fetch
+    fetchUpdates();
+
+    // Set up periodic updates
+    updateInterval = setInterval(fetchUpdates, REFRESH_INTERVAL);
+
+    // Initialize WebSocket for instant updates
+    initializeWebSocket();
+}
+
+// Stop real-time updates
+function stopRealTimeUpdates() {
+    clearInterval(updateInterval);
+}
+
+// Add styles for new app animation
+const style = document.createElement('style');
+style.textContent = `
+    .new-app {
+        animation: slideIn 0.5s ease-out;
+    }
+
+    .category-updated {
+        animation: pulse 1s ease-out;
+    }
+
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes pulse {
+        0% {
+            transform: scale(1);
+        }
+        50% {
+            transform: scale(1.05);
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+        100% {
+            transform: scale(1);
+        }
+    }
+`;
+document.head.appendChild(style);
+
+// Export functions
+export {
+    startRealTimeUpdates,
+    stopRealTimeUpdates
+}; 

@@ -1,0 +1,202 @@
+// Social Features Management
+import { currentUser } from '../auth.js';
+import { showNotification } from '../app.js';
+
+// State
+let comments = new Map();
+let ratings = new Map();
+
+// Fetch comments for an app
+async function fetchComments(appId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/apps/${appId}/comments`);
+        const data = await response.json();
+        comments.set(appId, data);
+        return data;
+    } catch (error) {
+        console.error('Error fetching comments:', error);
+        return [];
+    }
+}
+
+// Add a new comment
+async function addComment(appId, content) {
+    if (!currentUser) {
+        showNotification('Please log in to comment', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/apps/${appId}/comments`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify({
+                content,
+                userId: currentUser.id,
+                timestamp: new Date().toISOString()
+            })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            const appComments = comments.get(appId) || [];
+            comments.set(appId, [...appComments, data]);
+            showNotification('Comment added successfully', 'success');
+            return data;
+        } else {
+            throw new Error(data.message);
+        }
+    } catch (error) {
+        showNotification('Failed to add comment', 'error');
+        return null;
+    }
+}
+
+// Submit a rating
+async function submitRating(appId, score) {
+    if (!currentUser) {
+        showNotification('Please log in to rate', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/apps/${appId}/ratings`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify({
+                score,
+                userId: currentUser.id
+            })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            ratings.set(appId, data);
+            showNotification('Rating submitted successfully', 'success');
+            return data;
+        } else {
+            throw new Error(data.message);
+        }
+    } catch (error) {
+        showNotification('Failed to submit rating', 'error');
+        return null;
+    }
+}
+
+// Create comment section HTML
+function createCommentSection(appId, comments = []) {
+    return `
+        <div class="comments-section mt-6">
+            <h3 class="text-lg font-semibold mb-4">Comments</h3>
+            
+            ${currentUser ? `
+                <div class="mb-4">
+                    <textarea id="comment-input-${appId}" 
+                              class="w-full p-2 border rounded-lg resize-none"
+                              rows="3"
+                              placeholder="Share your thoughts..."></textarea>
+                    <button onclick="handleCommentSubmit('${appId}')"
+                            class="mt-2 bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600">
+                        Add Comment
+                    </button>
+                </div>
+            ` : `
+                <p class="mb-4 text-gray-600">
+                    <a href="#" onclick="showAuthModal('login')" class="text-blue-500">Log in</a> 
+                    to leave a comment
+                </p>
+            `}
+
+            <div class="space-y-4">
+                ${comments.map(comment => `
+                    <div class="comment bg-gray-50 p-4 rounded-lg">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center">
+                                <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                                    <span class="text-white font-bold">${comment.user.email[0].toUpperCase()}</span>
+                                </div>
+                                <span class="ml-2 font-medium">${comment.user.email}</span>
+                            </div>
+                            <span class="text-sm text-gray-500">
+                                ${new Date(comment.timestamp).toLocaleDateString()}
+                            </span>
+                        </div>
+                        <p class="text-gray-700">${comment.content}</p>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+// Create rating section HTML
+function createRatingSection(appId, rating = { average: 0, count: 0, userRating: null }) {
+    const stars = Array.from({ length: 5 }, (_, i) => {
+        const filled = i < Math.round(rating.average);
+        return `
+            <button onclick="handleRatingSubmit('${appId}', ${i + 1})"
+                    class="text-2xl ${filled ? 'text-yellow-400' : 'text-gray-300'} hover:text-yellow-400">
+                ★
+            </button>
+        `;
+    }).join('');
+
+    return `
+        <div class="rating-section mt-4">
+            <div class="flex items-center space-x-2">
+                <div class="stars">
+                    ${stars}
+                </div>
+                <span class="text-gray-600">
+                    ${rating.average.toFixed(1)} (${rating.count} ${rating.count === 1 ? 'rating' : 'ratings'})
+                </span>
+            </div>
+            ${rating.userRating ? `
+                <p class="text-sm text-gray-500 mt-1">
+                    Your rating: ${rating.userRating} ★
+                </p>
+            ` : ''}
+        </div>
+    `;
+}
+
+// Handle comment submission
+async function handleCommentSubmit(appId) {
+    const input = document.getElementById(`comment-input-${appId}`);
+    const content = input.value.trim();
+    
+    if (content) {
+        const comment = await addComment(appId, content);
+        if (comment) {
+            input.value = '';
+            const commentsSection = document.querySelector('.comments-section');
+            commentsSection.innerHTML = createCommentSection(appId, comments.get(appId));
+        }
+    }
+}
+
+// Handle rating submission
+async function handleRatingSubmit(appId, score) {
+    const rating = await submitRating(appId, score);
+    if (rating) {
+        const ratingSection = document.querySelector('.rating-section');
+        ratingSection.innerHTML = createRatingSection(appId, rating);
+    }
+}
+
+// Export functions
+export {
+    fetchComments,
+    addComment,
+    submitRating,
+    createCommentSection,
+    createRatingSection,
+    handleCommentSubmit,
+    handleRatingSubmit
+}; 

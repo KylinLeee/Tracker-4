@@ -1,0 +1,358 @@
+// Advanced Recommendations and Ratings Management
+import { showNotification } from '../app.js';
+
+// Recommendation scoring factors
+const SCORING_FACTORS = {
+    rating: {
+        weight: 0.3,
+        calculate: (app) => (app.rating?.average || 0) * 2
+    },
+    popularity: {
+        weight: 0.2,
+        calculate: (app) => {
+            const userCount = app.users || 0;
+            return Math.min(userCount / 1000, 10); // Cap at 10
+        }
+    },
+    engagement: {
+        weight: 0.15,
+        calculate: (app) => {
+            const comments = app.comments?.length || 0;
+            const shares = app.shares || 0;
+            return Math.min((comments + shares) / 100, 10);
+        }
+    },
+    growth: {
+        weight: 0.2,
+        calculate: (app) => {
+            const monthlyGrowth = app.monthlyGrowthRate || 0;
+            return Math.min(monthlyGrowth * 10, 10);
+        }
+    },
+    pricing: {
+        weight: 0.15,
+        calculate: (app) => {
+            const hasFreeTier = app.pricing?.some(p => p.price === 0);
+            const avgPrice = app.pricing?.reduce((sum, p) => sum + p.price, 0) / (app.pricing?.length || 1);
+            return hasFreeTier ? 10 : Math.max(10 - avgPrice / 100, 0);
+        }
+    }
+};
+
+// Category-specific importance weights
+const CATEGORY_WEIGHTS = {
+    'Language & Text': {
+        accuracy: 0.4,
+        speed: 0.3,
+        features: 0.3
+    },
+    'Image & Design': {
+        quality: 0.4,
+        speed: 0.3,
+        features: 0.3
+    },
+    'Audio & Voice': {
+        quality: 0.35,
+        speed: 0.35,
+        features: 0.3
+    },
+    'Development': {
+        accuracy: 0.4,
+        features: 0.4,
+        speed: 0.2
+    }
+};
+
+class RecommendationEngine {
+    constructor() {
+        this.cache = new Map();
+        this.lastUpdate = 0;
+    }
+
+    // Calculate overall score for an app
+    calculateScore(app) {
+        let totalScore = 0;
+        let totalWeight = 0;
+
+        for (const [factor, config] of Object.entries(SCORING_FACTORS)) {
+            const score = config.calculate(app);
+            totalScore += score * config.weight;
+            totalWeight += config.weight;
+        }
+
+        // Add category-specific scoring
+        const categoryWeights = CATEGORY_WEIGHTS[app.category?.name];
+        if (categoryWeights) {
+            for (const [metric, weight] of Object.entries(categoryWeights)) {
+                const score = app.metrics?.[metric] || 0;
+                totalScore += score * weight;
+                totalWeight += weight;
+            }
+        }
+
+        return totalScore / totalWeight;
+    }
+
+    // Get top recommendations
+    getTopRecommendations(apps, category = null, limit = 10) {
+        const cacheKey = `${category}-${limit}`;
+        const now = Date.now();
+
+        // Check cache (valid for 1 hour)
+        if (this.cache.has(cacheKey) && now - this.lastUpdate < 3600000) {
+            return this.cache.get(cacheKey);
+        }
+
+        // Filter by category if specified
+        let filteredApps = category ? 
+            apps.filter(app => app.category.name === category) : 
+            apps;
+
+        // Calculate scores and sort
+        const scoredApps = filteredApps.map(app => ({
+            ...app,
+            score: this.calculateScore(app)
+        })).sort((a, b) => b.score - a.score);
+
+        // Update cache
+        this.cache.set(cacheKey, scoredApps.slice(0, limit));
+        this.lastUpdate = now;
+
+        return scoredApps.slice(0, limit);
+    }
+
+    // Generate summary for an app
+    generateAppSummary(app) {
+        const summary = {
+            strengths: [],
+            weaknesses: [],
+            bestFor: [],
+            pricing: this.summarizePricing(app),
+            rating: this.summarizeRating(app),
+            popularity: this.summarizePopularity(app)
+        };
+
+        // Analyze strengths and weaknesses
+        if (app.rating?.average >= 4.5) summary.strengths.push('Highly Rated');
+        if (app.users > 10000) summary.strengths.push('Large User Base');
+        if (app.pricing?.some(p => p.price === 0)) summary.strengths.push('Free Tier Available');
+        if (app.features?.length > 10) summary.strengths.push('Feature-Rich');
+
+        if (app.rating?.average < 3.5) summary.weaknesses.push('Mixed Reviews');
+        if (app.pricing?.every(p => p.price > 50)) summary.weaknesses.push('Premium Pricing');
+        if (app.features?.length < 5) summary.weaknesses.push('Limited Features');
+
+        // Determine best use cases
+        const category = app.category.name;
+        switch (category) {
+            case 'Text Generation':
+                summary.bestFor.push('Content Creation', 'Writing Assistance');
+                break;
+            case 'Image Generation':
+                summary.bestFor.push('Visual Design', 'Creative Projects');
+                break;
+            case 'Development':
+                summary.bestFor.push('Code Generation', 'Development Workflow');
+                break;
+        }
+
+        return summary;
+    }
+
+    // Helper functions for summary generation
+    summarizePricing(app) {
+        const pricing = app.pricing || [];
+        const hasFree = pricing.some(p => p.price === 0);
+        const minPrice = Math.min(...pricing.map(p => p.price));
+        const maxPrice = Math.max(...pricing.map(p => p.price));
+
+        return {
+            hasFree,
+            minPrice,
+            maxPrice,
+            summary: hasFree ? 
+                'Freemium (Free tier available)' : 
+                `Paid (${minPrice === maxPrice ? `$${minPrice}` : `$${minPrice} - $${maxPrice}`})`
+        };
+    }
+
+    summarizeRating(app) {
+        const rating = app.rating || { average: 0, count: 0 };
+        let sentiment = 'No ratings yet';
+
+        if (rating.count > 0) {
+            if (rating.average >= 4.5) sentiment = 'Exceptional';
+            else if (rating.average >= 4.0) sentiment = 'Very Good';
+            else if (rating.average >= 3.5) sentiment = 'Good';
+            else if (rating.average >= 3.0) sentiment = 'Mixed';
+            else sentiment = 'Poor';
+        }
+
+        return {
+            score: rating.average,
+            count: rating.count,
+            sentiment
+        };
+    }
+
+    summarizePopularity(app) {
+        const users = app.users || 0;
+        let level = 'New';
+
+        if (users > 100000) level = 'Very Popular';
+        else if (users > 50000) level = 'Popular';
+        else if (users > 10000) level = 'Growing';
+        else if (users > 1000) level = 'Emerging';
+
+        return {
+            users,
+            level
+        };
+    }
+}
+
+// Create recommendation card
+function createRecommendationCard(app, engine) {
+    const summary = engine.generateAppSummary(app);
+    const score = Math.round(app.score * 10) / 10;
+
+    return `
+        <div class="recommendation-card bg-white rounded-lg shadow-lg p-6 border-l-4 border-blue-500">
+            <div class="flex items-start justify-between mb-4">
+                <div class="flex items-center">
+                    ${app.logoUrl ? 
+                        `<img src="${app.logoUrl}" alt="${app.name}" class="w-12 h-12 rounded-lg mr-4">` :
+                        `<div class="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center mr-4">
+                            <span class="text-white text-xl font-bold">${app.name[0]}</span>
+                        </div>`
+                    }
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900">${app.name}</h3>
+                        <p class="text-sm text-gray-600">${app.category.name}</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="text-2xl font-bold text-blue-500">${score}</div>
+                    <div class="text-sm text-gray-500">Score</div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <p class="text-gray-700">${app.description}</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <h4 class="font-semibold text-gray-900 mb-2">Strengths</h4>
+                    <ul class="space-y-1">
+                        ${summary.strengths.map(strength => `
+                            <li class="flex items-center text-green-600">
+                                <i class="fas fa-check-circle mr-2"></i>
+                                ${strength}
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-semibold text-gray-900 mb-2">Best For</h4>
+                    <ul class="space-y-1">
+                        ${summary.bestFor.map(use => `
+                            <li class="flex items-center text-blue-600">
+                                <i class="fas fa-star mr-2"></i>
+                                ${use}
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4 mb-4">
+                <div class="text-center p-3 bg-gray-50 rounded-lg">
+                    <div class="text-sm font-medium text-gray-500">Rating</div>
+                    <div class="text-lg font-bold text-gray-900">${summary.rating.score.toFixed(1)}</div>
+                    <div class="text-xs text-gray-500">${summary.rating.sentiment}</div>
+                </div>
+                <div class="text-center p-3 bg-gray-50 rounded-lg">
+                    <div class="text-sm font-medium text-gray-500">Pricing</div>
+                    <div class="text-lg font-bold text-gray-900">
+                        ${summary.pricing.hasFree ? 'Free+' : '$'}
+                    </div>
+                    <div class="text-xs text-gray-500">${summary.pricing.summary}</div>
+                </div>
+                <div class="text-center p-3 bg-gray-50 rounded-lg">
+                    <div class="text-sm font-medium text-gray-500">Popularity</div>
+                    <div class="text-lg font-bold text-gray-900">${summary.popularity.level}</div>
+                    <div class="text-xs text-gray-500">${summary.popularity.users.toLocaleString()} users</div>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center">
+                <a href="${app.url}" target="_blank" 
+                   class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">
+                    Try Now
+                </a>
+                <button onclick="showAppDetails(${JSON.stringify(app)})"
+                        class="text-blue-500 hover:text-blue-600">
+                    View Details →
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+// Create recommendations section
+function createRecommendationsSection(apps, engine) {
+    const topApps = engine.getTopRecommendations(apps);
+    
+    return `
+        <div class="recommendations-section bg-white rounded-lg shadow-lg p-6 mb-8">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-gray-900">Top Recommended AI Tools</h2>
+                <div class="flex items-center space-x-4">
+                    <select id="recommendation-category" class="form-select rounded-md border-gray-300">
+                        <option value="all">All Categories</option>
+                        ${Object.keys(CATEGORY_WEIGHTS).map(category => 
+                            `<option value="${category}">${category}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+            </div>
+
+            <div class="space-y-6" id="recommendations-grid">
+                ${topApps.map(app => createRecommendationCard(app, engine)).join('')}
+            </div>
+        </div>
+    `;
+}
+
+// Add styles
+const style = document.createElement('style');
+style.textContent = `
+    .recommendation-card {
+        transition: all 0.3s ease;
+    }
+
+    .recommendation-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 16px -2px rgba(0, 0, 0, 0.1);
+    }
+
+    .recommendations-section select {
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236B7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+        background-position: right 0.5rem center;
+        background-repeat: no-repeat;
+        background-size: 1.5em 1.5em;
+        padding-right: 2.5rem;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+`;
+document.head.appendChild(style);
+
+// Export
+export {
+    RecommendationEngine,
+    createRecommendationsSection,
+    SCORING_FACTORS,
+    CATEGORY_WEIGHTS
+}; 

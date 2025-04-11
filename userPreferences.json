@@ -1,0 +1,176 @@
+// User Preferences Management
+const DEFAULT_PREFERENCES = {
+    notifications: {
+        priceAlerts: true,
+        newApps: true,
+        updates: true
+    },
+    display: {
+        viewMode: 'grid', // 'grid' or 'list'
+        sortBy: 'trending', // 'trending', 'newest', 'price'
+        itemsPerPage: 12
+    },
+    filters: {
+        priceRange: {
+            min: 0,
+            max: 1000
+        },
+        categories: [],
+        features: []
+    }
+};
+
+let userPreferences = JSON.parse(localStorage.getItem('userPreferences')) || DEFAULT_PREFERENCES;
+
+// Save preferences to localStorage
+function savePreferences() {
+    localStorage.setItem('userPreferences', JSON.stringify(userPreferences));
+}
+
+// Update specific preference
+function updatePreference(category, key, value) {
+    if (userPreferences[category] && userPreferences[category].hasOwnProperty(key)) {
+        userPreferences[category][key] = value;
+        savePreferences();
+        applyPreferences();
+    }
+}
+
+// Apply current preferences to UI
+function applyPreferences() {
+    // Apply view mode
+    const appContainer = document.getElementById('trending-apps');
+    appContainer.className = userPreferences.display.viewMode === 'grid' 
+        ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+        : 'space-y-4';
+
+    // Apply sort order
+    loadTrendingApps(userPreferences.display.sortBy);
+
+    // Apply filters
+    applyFilters();
+}
+
+// Apply filters to app list
+function applyFilters() {
+    const apps = document.querySelectorAll('.app-card');
+    apps.forEach(app => {
+        const price = parseFloat(app.dataset.price);
+        const category = app.dataset.category;
+        const features = JSON.parse(app.dataset.features);
+
+        const priceInRange = price >= userPreferences.filters.priceRange.min && 
+                           price <= userPreferences.filters.priceRange.max;
+        const categoryMatch = userPreferences.filters.categories.length === 0 || 
+                            userPreferences.filters.categories.includes(category);
+        const featuresMatch = userPreferences.filters.features.length === 0 || 
+                            userPreferences.filters.features.some(f => features.includes(f));
+
+        app.style.display = priceInRange && categoryMatch && featuresMatch ? 'block' : 'none';
+    });
+}
+
+// Create preferences UI
+function createPreferencesUI() {
+    return `
+        <div class="preferences-panel bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-bold mb-4">Preferences</h2>
+            
+            <!-- Notifications -->
+            <div class="mb-6">
+                <h3 class="font-semibold mb-2">Notifications</h3>
+                <div class="space-y-2">
+                    <label class="flex items-center">
+                        <input type="checkbox" 
+                               ${userPreferences.notifications.priceAlerts ? 'checked' : ''}
+                               onchange="updatePreference('notifications', 'priceAlerts', this.checked)"
+                               class="form-checkbox">
+                        <span class="ml-2">Price Alerts</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" 
+                               ${userPreferences.notifications.newApps ? 'checked' : ''}
+                               onchange="updatePreference('notifications', 'newApps', this.checked)"
+                               class="form-checkbox">
+                        <span class="ml-2">New Apps</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" 
+                               ${userPreferences.notifications.updates ? 'checked' : ''}
+                               onchange="updatePreference('notifications', 'updates', this.checked)"
+                               class="form-checkbox">
+                        <span class="ml-2">Updates</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Display Options -->
+            <div class="mb-6">
+                <h3 class="font-semibold mb-2">Display Options</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block mb-1">View Mode</label>
+                        <select onchange="updatePreference('display', 'viewMode', this.value)"
+                                class="form-select w-full">
+                            <option value="grid" ${userPreferences.display.viewMode === 'grid' ? 'selected' : ''}>Grid</option>
+                            <option value="list" ${userPreferences.display.viewMode === 'list' ? 'selected' : ''}>List</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block mb-1">Sort By</label>
+                        <select onchange="updatePreference('display', 'sortBy', this.value)"
+                                class="form-select w-full">
+                            <option value="trending" ${userPreferences.display.sortBy === 'trending' ? 'selected' : ''}>Trending</option>
+                            <option value="newest" ${userPreferences.display.sortBy === 'newest' ? 'selected' : ''}>Newest</option>
+                            <option value="price" ${userPreferences.display.sortBy === 'price' ? 'selected' : ''}>Price</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block mb-1">Items Per Page</label>
+                        <select onchange="updatePreference('display', 'itemsPerPage', parseInt(this.value))"
+                                class="form-select w-full">
+                            <option value="12" ${userPreferences.display.itemsPerPage === 12 ? 'selected' : ''}>12</option>
+                            <option value="24" ${userPreferences.display.itemsPerPage === 24 ? 'selected' : ''}>24</option>
+                            <option value="48" ${userPreferences.display.itemsPerPage === 48 ? 'selected' : ''}>48</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div>
+                <h3 class="font-semibold mb-2">Filters</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block mb-1">Price Range</label>
+                        <div class="flex space-x-2">
+                            <input type="number" 
+                                   value="${userPreferences.filters.priceRange.min}"
+                                   onchange="updatePreference('filters', 'priceRange', {...userPreferences.filters.priceRange, min: parseFloat(this.value)})"
+                                   class="form-input w-1/2"
+                                   placeholder="Min">
+                            <input type="number" 
+                                   value="${userPreferences.filters.priceRange.max}"
+                                   onchange="updatePreference('filters', 'priceRange', {...userPreferences.filters.priceRange, max: parseFloat(this.value)})"
+                                   class="form-input w-1/2"
+                                   placeholder="Max">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Initialize preferences
+document.addEventListener('DOMContentLoaded', () => {
+    applyPreferences();
+});
+
+// Export functions
+export {
+    userPreferences,
+    updatePreference,
+    applyPreferences,
+    createPreferencesUI
+}; 

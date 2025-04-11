@@ -1,0 +1,380 @@
+// Advanced Data Gathering Management
+import { showNotification } from '../app.js';
+
+// Additional data sources
+const ADVANCED_SOURCES = {
+    // AI News and Updates
+    news: [
+        'https://api.newsapi.org/v2/everything?q=artificial-intelligence&language=en',
+        'https://api.hnrss.org/newest?q=AI+artificial+intelligence',
+        'https://dev.to/api/articles?tag=ai'
+    ],
+    // AI Research Papers
+    research: [
+        'https://arxiv.org/api/query?search_query=cat:cs.AI',
+        'https://api.semanticscholar.org/graph/v1/paper/search'
+    ],
+    // AI Product Launches
+    products: [
+        'https://api.producthunt.com/v2/api/graphql',
+        'https://api.crunchbase.com/api/v4/entities/organizations',
+        'https://api.alternativeto.net/v2/software'
+    ],
+    // GitHub Repositories
+    github: [
+        'https://api.github.com/search/repositories?q=topic:ai-tools',
+        'https://api.github.com/search/repositories?q=topic:artificial-intelligence',
+        'https://api.github.com/search/repositories?q=topic:machine-learning'
+    ],
+    // AI Model Updates
+    models: [
+        'https://huggingface.co/api/models?sort=lastModified',
+        'https://api.openai.com/v1/models',
+        'https://api.anthropic.com/v1/models'
+    ]
+};
+
+// Data processing rules
+const PROCESSING_RULES = {
+    relevanceScore: (item) => {
+        let score = 0;
+        // Calculate based on multiple factors
+        score += item.stars || 0;
+        score += (item.forks || 0) * 2;
+        score += (item.watchers || 0) * 1.5;
+        score += (item.mentions || 0) * 3;
+        return score;
+    },
+    
+    trendingScore: (item) => {
+        const now = Date.now();
+        const age = now - new Date(item.timestamp).getTime();
+        const baseScore = PROCESSING_RULES.relevanceScore(item);
+        return baseScore * Math.exp(-age / (1000 * 60 * 60 * 24 * 7)); // Decay over a week
+    },
+    
+    isRelevant: (item) => {
+        const keywords = ['ai', 'artificial intelligence', 'machine learning', 'deep learning', 'neural'];
+        const text = `${item.name} ${item.description}`.toLowerCase();
+        return keywords.some(keyword => text.includes(keyword));
+    }
+};
+
+// Enhanced data fetching with rate limiting and error handling
+class DataFetcher {
+    constructor() {
+        this.rateLimit = new Map();
+        this.cache = new Map();
+        this.errorCounts = new Map();
+    }
+
+    async fetchWithRetry(url, options = {}, retries = 3) {
+        try {
+            // Check rate limit
+            const lastFetch = this.rateLimit.get(url) || 0;
+            const now = Date.now();
+            if (now - lastFetch < 1000) { // 1 second minimum between requests
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            // Update rate limit
+            this.rateLimit.set(url, now);
+            
+            // Check cache
+            const cached = this.cache.get(url);
+            if (cached && now - cached.timestamp < 300000) { // 5 minute cache
+                return cached.data;
+            }
+            
+            const response = await fetch(url, {
+                ...options,
+                headers: {
+                    'Accept': 'application/json',
+                    ...options.headers
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            // Update cache
+            this.cache.set(url, {
+                timestamp: now,
+                data
+            });
+            
+            // Reset error count
+            this.errorCounts.set(url, 0);
+            
+            return data;
+        } catch (error) {
+            const errorCount = (this.errorCounts.get(url) || 0) + 1;
+            this.errorCounts.set(url, errorCount);
+            
+            if (retries > 0 && errorCount < 5) { // Max 5 consecutive errors
+                await new Promise(resolve => setTimeout(resolve, 2000 * errorCount));
+                return this.fetchWithRetry(url, options, retries - 1);
+            }
+            
+            console.error(`Failed to fetch from ${url}:`, error);
+            return null;
+        }
+    }
+}
+
+// Real-time data aggregator
+class RealTimeAggregator {
+    constructor() {
+        this.fetcher = new DataFetcher();
+        this.data = new Map();
+        this.listeners = new Set();
+    }
+
+    async gatherData() {
+        const newData = new Map();
+        
+        // Gather from all sources
+        for (const [category, sources] of Object.entries(ADVANCED_SOURCES)) {
+            const categoryData = await Promise.all(
+                sources.map(async url => {
+                    const data = await this.fetcher.fetchWithRetry(url);
+                    return this.processData(data, category);
+                })
+            );
+            
+            newData.set(category, categoryData.flat().filter(Boolean));
+        }
+        
+        // Update data and notify listeners
+        this.data = newData;
+        this.notifyListeners();
+    }
+
+    processData(data, category) {
+        if (!data) return [];
+        
+        switch (category) {
+            case 'news':
+                return this.processNewsData(data);
+            case 'research':
+                return this.processResearchData(data);
+            case 'products':
+                return this.processProductData(data);
+            case 'github':
+                return this.processGithubData(data);
+            case 'models':
+                return this.processModelData(data);
+            default:
+                return [];
+        }
+    }
+
+    // Process different types of data
+    processNewsData(data) {
+        return data.articles?.map(article => ({
+            type: 'news',
+            id: article.url,
+            name: article.title,
+            description: article.description,
+            url: article.url,
+            timestamp: new Date(article.publishedAt).getTime(),
+            source: article.source.name,
+            relevance: PROCESSING_RULES.relevanceScore(article)
+        })) || [];
+    }
+
+    processResearchData(data) {
+        return data.papers?.map(paper => ({
+            type: 'research',
+            id: paper.id,
+            name: paper.title,
+            description: paper.abstract,
+            url: paper.url,
+            timestamp: new Date(paper.publishedDate).getTime(),
+            source: 'Research Paper',
+            citations: paper.citationCount,
+            relevance: PROCESSING_RULES.relevanceScore(paper)
+        })) || [];
+    }
+
+    processProductData(data) {
+        return data.products?.map(product => ({
+            type: 'product',
+            id: product.id,
+            name: product.name,
+            description: product.description,
+            url: product.url,
+            timestamp: new Date(product.launchDate).getTime(),
+            source: product.maker,
+            relevance: PROCESSING_RULES.relevanceScore(product)
+        })) || [];
+    }
+
+    processGithubData(data) {
+        return data.items?.map(repo => ({
+            type: 'github',
+            id: repo.id,
+            name: repo.name,
+            description: repo.description,
+            url: repo.html_url,
+            timestamp: new Date(repo.updated_at).getTime(),
+            source: 'GitHub',
+            stars: repo.stargazers_count,
+            relevance: PROCESSING_RULES.relevanceScore(repo)
+        })) || [];
+    }
+
+    processModelData(data) {
+        return data.models?.map(model => ({
+            type: 'model',
+            id: model.id,
+            name: model.name,
+            description: model.description,
+            url: model.url,
+            timestamp: new Date(model.lastModified).getTime(),
+            source: model.provider,
+            downloads: model.downloads,
+            relevance: PROCESSING_RULES.relevanceScore(model)
+        })) || [];
+    }
+
+    // Listener management
+    addListener(callback) {
+        this.listeners.add(callback);
+    }
+
+    removeListener(callback) {
+        this.listeners.delete(callback);
+    }
+
+    notifyListeners() {
+        for (const listener of this.listeners) {
+            listener(this.data);
+        }
+    }
+
+    // Get trending items
+    getTrendingItems(category = null, limit = 10) {
+        let items = [];
+        if (category) {
+            items = this.data.get(category) || [];
+        } else {
+            items = Array.from(this.data.values()).flat();
+        }
+        
+        return items
+            .sort((a, b) => PROCESSING_RULES.trendingScore(b) - PROCESSING_RULES.trendingScore(a))
+            .slice(0, limit);
+    }
+}
+
+// Create real-time updates display
+function createRealTimeUpdatesSection(data) {
+    return `
+        <div class="real-time-updates bg-white rounded-lg shadow-lg p-6 mb-8">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-gray-900">Real-Time AI Updates</h2>
+                <div class="flex items-center space-x-4">
+                    <select id="update-category" class="form-select rounded-md border-gray-300">
+                        <option value="all">All Updates</option>
+                        <option value="news">News</option>
+                        <option value="research">Research</option>
+                        <option value="products">Products</option>
+                        <option value="github">GitHub</option>
+                        <option value="models">Models</option>
+                    </select>
+                    <button id="refresh-updates" class="text-blue-500 hover:text-blue-600">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="real-time-grid">
+                ${Array.from(data.entries()).map(([category, items]) => 
+                    items.map(item => createUpdateCard(item)).join('')
+                ).join('')}
+            </div>
+        </div>
+    `;
+}
+
+// Create update card
+function createUpdateCard(item) {
+    const typeIcons = {
+        news: 'newspaper',
+        research: 'microscope',
+        product: 'box-open',
+        github: 'code-branch',
+        model: 'brain'
+    };
+
+    return `
+        <div class="update-card bg-white rounded-lg shadow-sm p-4 border-l-4 ${getTypeColor(item.type)}">
+            <div class="flex items-start justify-between mb-3">
+                <div class="flex items-center">
+                    <i class="fas fa-${typeIcons[item.type]} text-lg ${getTypeTextColor(item.type)} mr-2"></i>
+                    <span class="text-sm font-medium ${getTypeTextColor(item.type)}">${item.type.toUpperCase()}</span>
+                </div>
+                <span class="text-xs text-gray-500">
+                    ${formatTimestamp(item.timestamp)}
+                </span>
+            </div>
+            
+            <h3 class="font-semibold text-gray-900 mb-2">${item.name}</h3>
+            <p class="text-sm text-gray-600 mb-3 line-clamp-2">${item.description}</p>
+            
+            <div class="flex items-center justify-between mt-auto">
+                <span class="text-xs text-gray-500">${item.source}</span>
+                <a href="${item.url}" target="_blank" 
+                   class="text-blue-500 hover:text-blue-600 text-sm font-medium">
+                    Learn More →
+                </a>
+            </div>
+        </div>
+    `;
+}
+
+// Helper functions
+function getTypeColor(type) {
+    const colors = {
+        news: 'border-blue-500',
+        research: 'border-purple-500',
+        product: 'border-green-500',
+        github: 'border-gray-500',
+        model: 'border-yellow-500'
+    };
+    return colors[type] || 'border-gray-300';
+}
+
+function getTypeTextColor(type) {
+    const colors = {
+        news: 'text-blue-500',
+        research: 'text-purple-500',
+        product: 'text-green-500',
+        github: 'text-gray-500',
+        model: 'text-yellow-500'
+    };
+    return colors[type] || 'text-gray-500';
+}
+
+function formatTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now - date;
+    
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return date.toLocaleDateString();
+}
+
+// Export
+export {
+    RealTimeAggregator,
+    createRealTimeUpdatesSection,
+    ADVANCED_SOURCES,
+    PROCESSING_RULES
+}; 
