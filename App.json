@@ -37,75 +37,120 @@ const mockData = {
 };
 
 // DOM Elements
-const trendingAppsContainer = document.getElementById('trending-apps');
-const categoriesContainer = document.getElementById('categories');
-const searchInput = document.getElementById('search-input');
-const modal = document.getElementById('app-details-modal');
-const modalContent = document.getElementById('modal-content');
+let trendingAppsContainer;
+let categoriesContainer;
+let searchInput;
+let modal;
+let modalContent;
+let errorMessage;
+
+// Initialize the application
+function initializeApp() {
+    try {
+        // Get DOM elements
+        trendingAppsContainer = document.getElementById('trending-apps');
+        categoriesContainer = document.getElementById('categories');
+        searchInput = document.getElementById('search-input');
+        modal = document.getElementById('app-details-modal');
+        modalContent = document.getElementById('modal-content');
+        errorMessage = document.getElementById('error-message');
+
+        if (!trendingAppsContainer || !categoriesContainer || !searchInput || !modal || !modalContent) {
+            throw new Error('Required DOM elements not found');
+        }
+
+        // Set up event listeners
+        searchInput.addEventListener('input', (e) => filterApps(e.target.value));
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        // Initial render
+        updateTrendingApps();
+        updateCategories();
+
+    } catch (error) {
+        showError('Failed to initialize application: ' + error.message);
+    }
+}
 
 // Function to create a trending app card
 function createAppCard(app) {
-    const card = document.createElement('div');
-    card.className = 'bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition duration-300';
-    card.innerHTML = `
-        <div class="flex items-center mb-4">
-            <i class="${app.icon} text-2xl text-blue-500"></i>
-            <h3 class="ml-3 text-xl font-semibold text-gray-900">${app.name}</h3>
-        </div>
-        <p class="text-gray-600 mb-4">${app.description}</p>
-        <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-500">${app.category}</span>
-            <div class="flex items-center">
-                <i class="fas fa-star text-yellow-400 mr-1"></i>
-                <span class="text-sm font-medium text-gray-700">${app.rating}</span>
+    try {
+        const card = document.createElement('div');
+        card.className = 'bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition duration-300 card-hover cursor-pointer';
+        card.innerHTML = `
+            <div class="flex items-center mb-4">
+                <i class="${app.icon} text-2xl text-blue-500"></i>
+                <h3 class="ml-3 text-xl font-semibold text-gray-900">${app.name}</h3>
             </div>
-        </div>
-    `;
-    card.addEventListener('click', () => showAppDetails(app));
-    return card;
+            <p class="text-gray-600 mb-4">${app.description}</p>
+            <div class="flex justify-between items-center">
+                <span class="text-sm text-gray-500">${app.category}</span>
+                <div class="flex items-center">
+                    <i class="fas fa-star text-yellow-400 mr-1"></i>
+                    <span class="text-sm font-medium text-gray-700">${app.rating}</span>
+                </div>
+            </div>
+        `;
+        card.addEventListener('click', () => showAppDetails(app));
+        return card;
+    } catch (error) {
+        showError('Error creating app card');
+        return null;
+    }
 }
 
 // Function to create a category card
 function createCategoryCard(category) {
-    const card = document.createElement('div');
-    card.className = 'bg-white rounded-lg shadow-sm p-4 hover:bg-gray-50 cursor-pointer transition duration-300';
-    card.innerHTML = `
-        <div class="flex items-center">
-            <i class="${category.icon} text-xl text-blue-500"></i>
-            <span class="ml-3 font-medium text-gray-900">${category.name}</span>
-        </div>
-    `;
-    return card;
+    try {
+        const card = document.createElement('div');
+        card.className = 'bg-white rounded-lg shadow-sm p-4 hover:bg-gray-50 cursor-pointer transition duration-300 card-hover';
+        card.innerHTML = `
+            <div class="flex items-center">
+                <i class="${category.icon} text-xl text-blue-500"></i>
+                <span class="ml-3 font-medium text-gray-900">${category.name}</span>
+            </div>
+        `;
+        return card;
+    } catch (error) {
+        showError('Error creating category card');
+        return null;
+    }
 }
 
 // Function to show app details in modal
 function showAppDetails(app) {
-    modalContent.innerHTML = `
-        <div class="flex justify-between items-start mb-6">
-            <div class="flex items-center">
-                <i class="${app.icon} text-3xl text-blue-500"></i>
-                <h2 class="ml-4 text-2xl font-bold text-gray-900">${app.name}</h2>
+    try {
+        modalContent.innerHTML = `
+            <div class="flex justify-between items-start mb-6">
+                <div class="flex items-center">
+                    <i class="${app.icon} text-3xl text-blue-500"></i>
+                    <h2 class="ml-4 text-2xl font-bold text-gray-900">${app.name}</h2>
+                </div>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-500">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
             </div>
-            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-500">
-                <i class="fas fa-times text-xl"></i>
-            </button>
-        </div>
-        <div class="space-y-4">
-            <p class="text-gray-600">${app.description}</p>
-            <div class="flex items-center">
-                <span class="text-sm font-medium text-gray-500">Category:</span>
-                <span class="ml-2 text-sm text-gray-900">${app.category}</span>
-            </div>
-            <div class="flex items-center">
-                <span class="text-sm font-medium text-gray-500">Rating:</span>
-                <div class="ml-2 flex items-center">
-                    <i class="fas fa-star text-yellow-400 mr-1"></i>
-                    <span class="text-sm text-gray-900">${app.rating}</span>
+            <div class="space-y-4">
+                <p class="text-gray-600">${app.description}</p>
+                <div class="flex items-center">
+                    <span class="text-sm font-medium text-gray-500">Category:</span>
+                    <span class="ml-2 text-sm text-gray-900">${app.category}</span>
+                </div>
+                <div class="flex items-center">
+                    <span class="text-sm font-medium text-gray-500">Rating:</span>
+                    <div class="ml-2 flex items-center">
+                        <i class="fas fa-star text-yellow-400 mr-1"></i>
+                        <span class="text-sm text-gray-900">${app.rating}</span>
+                    </div>
                 </div>
             </div>
-        </div>
-    `;
-    modal.classList.remove('hidden');
+        `;
+        modal.classList.remove('hidden');
+    } catch (error) {
+        showError('Error showing app details');
+    }
 }
 
 // Function to close modal
@@ -115,50 +160,58 @@ function closeModal() {
 
 // Function to filter apps based on search input
 function filterApps(searchTerm) {
-    const filteredApps = mockData.trendingApps.filter(app => 
-        app.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        app.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        app.category.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    updateTrendingApps(filteredApps);
+    try {
+        const filteredApps = mockData.trendingApps.filter(app => 
+            app.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            app.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            app.category.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+        updateTrendingApps(filteredApps);
+    } catch (error) {
+        showError('Error filtering apps');
+    }
 }
 
 // Function to update trending apps display
 function updateTrendingApps(apps = mockData.trendingApps) {
-    trendingAppsContainer.innerHTML = '';
-    apps.forEach(app => {
-        trendingAppsContainer.appendChild(createAppCard(app));
-    });
+    try {
+        trendingAppsContainer.innerHTML = '';
+        apps.forEach(app => {
+            const card = createAppCard(app);
+            if (card) trendingAppsContainer.appendChild(card);
+        });
+    } catch (error) {
+        showError('Error updating trending apps');
+    }
 }
 
 // Function to update categories display
 function updateCategories() {
-    categoriesContainer.innerHTML = '';
-    mockData.categories.forEach(category => {
-        categoriesContainer.appendChild(createCategoryCard(category));
-    });
+    try {
+        categoriesContainer.innerHTML = '';
+        mockData.categories.forEach(category => {
+            const card = createCategoryCard(category);
+            if (card) categoriesContainer.appendChild(card);
+        });
+    } catch (error) {
+        showError('Error updating categories');
+    }
 }
 
-// Event Listeners
-searchInput.addEventListener('input', (e) => filterApps(e.target.value));
-modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeModal();
-});
-
-// Initialize displays
-document.addEventListener('DOMContentLoaded', () => {
-    updateTrendingApps();
-    updateCategories();
-});
-
-// Function to periodically update content (every 30 seconds)
-function startPeriodicUpdates() {
-    setInterval(() => {
-        // In a real application, you would fetch new data from your API here
-        updateTrendingApps();
-        updateCategories();
-    }, 30000);
+// Function to show error message
+function showError(message) {
+    console.error(message);
+    if (errorMessage) {
+        errorMessage.querySelector('p').textContent = message;
+        errorMessage.classList.remove('hidden');
+        setTimeout(() => {
+            errorMessage.classList.add('hidden');
+        }, 5000);
+    }
 }
 
-// Start periodic updates
-startPeriodicUpdates();
+// Make closeModal available globally
+window.closeModal = closeModal;
+
+// Initialize the app when the DOM is loaded
+document.addEventListener('DOMContentLoaded', initializeApp);
